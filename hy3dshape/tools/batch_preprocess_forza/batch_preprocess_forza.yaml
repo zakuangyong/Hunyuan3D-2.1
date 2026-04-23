@@ -1,0 +1,6 @@
+input_dir: datasets/3d_model_by_forza
+output_dir: datasets/forza_preprocessed
+blender_path: C:\Users\Lenovo\Downloads\Compressed\blender-5.1.0-candidate+v51.db4b36d1b297-windows.amd64-release\blender.exe
+resolution: 512
+views: 24
+skip_existing: false

@@ -100,12 +100,18 @@ def trellis_cond_camera_sequence(num_cond_views):
              for y, p, r, f in zip(yaws, pitchs, radius, fov)]
     return views
 
-def orthogonal_camera_sequence():
-    yaws = [-0.5 * np.pi, 0, 0.5 * np.pi, np.pi, -0.5 * np.pi, -0.5 * np.pi]
-    pitchs = [0, 0, 0, 0, 0.5 * np.pi, -0.5 * np.pi]
-    radius = [1.5 for i in range(6)]
+def orthogonal_camera_sequence(num_views=6):
+    # Keep legacy behavior for 6-view export.
+    if num_views == 6:
+        yaws = [-0.5 * np.pi, 0, 0.5 * np.pi, np.pi, -0.5 * np.pi, -0.5 * np.pi]
+        pitchs = [0, 0, 0, 0, 0.5 * np.pi, -0.5 * np.pi]
+    else:
+        # For custom counts (e.g. 24), distribute cameras on a horizontal ring.
+        yaws = [2 * np.pi * i / num_views for i in range(num_views)]
+        pitchs = [0.0 for _ in range(num_views)]
+    radius = [1.5 for _ in range(len(yaws))]
     fov = [1.5 * np.arcsin(np.sqrt(3) / 2 / r) for r in radius]
-    views = [{'hangle': y, 'vangle': p, 'cam_dis': r, 'fov': f, 'proj_type': 1} \
+    views = [{'hangle': y, 'vangle': p, 'cam_dis': r, 'fov': f, 'proj_type': 1}
              for y, p, r, f in zip(yaws, pitchs, radius, fov)]
     return views
 
@@ -397,42 +403,80 @@ def init_render(engine='CYCLES', resolution=512, geo_mode=False):
     bpy.context.scene.render.image_settings.color_mode = 'RGBA'
     bpy.context.scene.render.film_transparent = True
     
-    bpy.context.scene.cycles.device = 'GPU'
+    if hasattr(bpy.context.scene, "cycles") and hasattr(bpy.context.scene.cycles, "device"):
+        bpy.context.scene.cycles.device = 'GPU'
     #bpy.context.scene.cycles.samples = 128 if not geo_mode else 1
-    bpy.context.scene.cycles.filter_type = 'BOX'
-    bpy.context.scene.cycles.filter_width = 1
-    bpy.context.scene.cycles.diffuse_bounces = 1
-    bpy.context.scene.cycles.glossy_bounces = 1
+    if hasattr(bpy.context.scene, "cycles"):
+        cycles = bpy.context.scene.cycles
+        if hasattr(cycles, "filter_type"):
+            cycles.filter_type = 'BOX'
+        elif hasattr(cycles, "pixel_filter_type"):
+            cycles.pixel_filter_type = 'BOX'
+        if hasattr(cycles, "filter_width"):
+            cycles.filter_width = 1
+        elif hasattr(cycles, "pixel_filter_width"):
+            cycles.pixel_filter_width = 1
+        if hasattr(cycles, "diffuse_bounces"):
+            cycles.diffuse_bounces = 1
+        if hasattr(cycles, "glossy_bounces"):
+            cycles.glossy_bounces = 1
     # bpy.context.scene.cycles.transparent_max_bounces = 3 if not geo_mode else 0
     # bpy.context.scene.cycles.transmission_bounces = 3 if not geo_mode else 1
-    bpy.context.scene.cycles.use_denoising = True
+        if hasattr(cycles, "use_denoising"):
+            cycles.use_denoising = True
         
     bpy.context.preferences.addons['cycles'].preferences.get_devices()
     # bpy.context.preferences.addons['cycles'].preferences.compute_device_type = 'CUDA'
     
 def init_nodes(save_depth=False, save_normal=False, save_albedo=False, save_mr = False, save_mist=False):
-    if not any([save_depth, save_normal, save_albedo, save_mist]):
+    if not any([save_depth, save_normal, save_albedo, save_mr, save_mist]):
         return {}, {}, []
     outputs = {}
     spec_nodes = {}
     composite_nodes = []
-    bpy.context.scene.use_nodes = True
-    bpy.context.scene.view_layers['ViewLayer'].use_pass_z = save_depth
-    bpy.context.scene.view_layers['ViewLayer'].use_pass_normal = save_normal
-    bpy.context.scene.view_layers['ViewLayer'].use_pass_diffuse_color = save_albedo
-    bpy.context.scene.view_layers['ViewLayer'].use_pass_mist = save_mist
+    scene = bpy.context.scene
+    if hasattr(scene, "use_nodes"):
+        scene.use_nodes = True
+    if hasattr(scene, "render") and hasattr(scene.render, "use_compositing"):
+        scene.render.use_compositing = True
+
+    view_layer = getattr(bpy.context, "view_layer", None) or (scene.view_layers[0] if len(scene.view_layers) > 0 else None)
+    if view_layer is not None:
+        if hasattr(view_layer, "use_pass_z"):
+            view_layer.use_pass_z = save_depth
+        if hasattr(view_layer, "use_pass_normal"):
+            view_layer.use_pass_normal = save_normal
+        if hasattr(view_layer, "use_pass_diffuse_color"):
+            view_layer.use_pass_diffuse_color = save_albedo
+        if hasattr(view_layer, "use_pass_mist"):
+            view_layer.use_pass_mist = save_mist
+
+    tree = getattr(scene, "node_tree", None)
+    if tree is None:
+        tree = getattr(scene, "compositing_node_group", None)
+    if tree is None:
+        tree = getattr(scene, "compositing_node_tree", None)
+    if tree is None and hasattr(scene, "compositing_node_group"):
+        tree = bpy.data.node_groups.new("CompositingNodeTree", "CompositorNodeTree")
+        scene.compositing_node_group = tree
+    if tree is None:
+        raise AttributeError("Compositing node tree is not available in this Blender build/context.")
     
-    nodes = bpy.context.scene.node_tree.nodes
-    links = bpy.context.scene.node_tree.links
-    for n in nodes:
+    nodes = tree.nodes
+    links = tree.links
+    for n in list(nodes):
         nodes.remove(n)
     
     render_layers = nodes.new('CompositorNodeRLayers')
     
     if save_depth:
         depth_file_output = nodes.new('CompositorNodeOutputFile')
-        depth_file_output.base_path = ''
-        depth_file_output.file_slots[0].use_node_format = True
+        if hasattr(depth_file_output, "base_path"):
+            depth_file_output.base_path = ''
+        elif hasattr(depth_file_output, "directory"):
+            depth_file_output.directory = ''
+        if hasattr(depth_file_output, "file_slots") and len(depth_file_output.file_slots) > 0 and hasattr(depth_file_output.file_slots[0], "use_node_format"):
+            depth_file_output.file_slots[0].use_node_format = True
         depth_file_output.format.file_format = "OPEN_EXR"
         links.new(render_layers.outputs['Depth'], depth_file_output.inputs[0])
         
@@ -441,8 +485,12 @@ def init_nodes(save_depth=False, save_normal=False, save_albedo=False, save_mr =
     
     if save_normal:
         normal_file_output = nodes.new('CompositorNodeOutputFile')
-        normal_file_output.base_path = ''
-        normal_file_output.file_slots[0].use_node_format = True
+        if hasattr(normal_file_output, "base_path"):
+            normal_file_output.base_path = ''
+        elif hasattr(normal_file_output, "directory"):
+            normal_file_output.directory = ''
+        if hasattr(normal_file_output, "file_slots") and len(normal_file_output.file_slots) > 0 and hasattr(normal_file_output.file_slots[0], "use_node_format"):
+            normal_file_output.file_slots[0].use_node_format = True
         normal_file_output.format.file_format = 'OPEN_EXR'
         links.new(render_layers.outputs['Normal'], normal_file_output.inputs[0])
         
@@ -451,8 +499,12 @@ def init_nodes(save_depth=False, save_normal=False, save_albedo=False, save_mr =
     
     if save_albedo:
         albedo_file_output = nodes.new('CompositorNodeOutputFile')
-        albedo_file_output.base_path = ''
-        albedo_file_output.file_slots[0].use_node_format = True
+        if hasattr(albedo_file_output, "base_path"):
+            albedo_file_output.base_path = ''
+        elif hasattr(albedo_file_output, "directory"):
+            albedo_file_output.directory = ''
+        if hasattr(albedo_file_output, "file_slots") and len(albedo_file_output.file_slots) > 0 and hasattr(albedo_file_output.file_slots[0], "use_node_format"):
+            albedo_file_output.file_slots[0].use_node_format = True
         albedo_file_output.format.file_format = 'PNG'
         albedo_file_output.format.color_mode = 'RGBA'
         albedo_file_output.format.color_depth = '8'
@@ -467,9 +519,13 @@ def init_nodes(save_depth=False, save_normal=False, save_albedo=False, save_mr =
         #composite_nodes.append((alpha_albedo.outputs['Image'], albedo_file_output.inputs[0]))
 
     if save_mr:
-        mr_file_output = tree.nodes.new(type='CompositorNodeOutputFile')
-        mr_file_output.base_path = ''
-        mr_file_output.file_slots[0].use_node_format = True
+        mr_file_output = nodes.new(type='CompositorNodeOutputFile')
+        if hasattr(mr_file_output, "base_path"):
+            mr_file_output.base_path = ''
+        elif hasattr(mr_file_output, "directory"):
+            mr_file_output.directory = ''
+        if hasattr(mr_file_output, "file_slots") and len(mr_file_output.file_slots) > 0 and hasattr(mr_file_output.file_slots[0], "use_node_format"):
+            mr_file_output.file_slots[0].use_node_format = True
         mr_file_output.format.file_format = 'OPEN_EXR'
         
         links.new(render_layers.outputs['Image'], mr_file_output.inputs[0])
@@ -482,8 +538,12 @@ def init_nodes(save_depth=False, save_normal=False, save_albedo=False, save_mr =
         bpy.data.worlds['World'].mist_settings.depth = 10
         
         mist_file_output = nodes.new('CompositorNodeOutputFile')
-        mist_file_output.base_path = ''
-        mist_file_output.file_slots[0].use_node_format = True
+        if hasattr(mist_file_output, "base_path"):
+            mist_file_output.base_path = ''
+        elif hasattr(mist_file_output, "directory"):
+            mist_file_output.directory = ''
+        if hasattr(mist_file_output, "file_slots") and len(mist_file_output.file_slots) > 0 and hasattr(mist_file_output.file_slots[0], "use_node_format"):
+            mist_file_output.file_slots[0].use_node_format = True
         mist_file_output.format.file_format = 'PNG'
         mist_file_output.format.color_mode = 'BW'
         mist_file_output.format.color_depth = '16'
@@ -777,12 +837,7 @@ def main(arg):
         views = trellis_cond_camera_sequence(arg.views)
         arg.save_mesh = True
     else:
-        views = orthogonal_camera_sequence()
-        arg.save_albedo = True
-        arg.save_mr = True
-        arg.save_normal = True
-        arg.save_depth = True
-        arg.save_mesh = False
+        views = orthogonal_camera_sequence(arg.views)
     
     # Initialize context
     init_render(engine=arg.engine, resolution=arg.resolution, geo_mode=arg.geo_mode)
@@ -790,6 +845,7 @@ def main(arg):
         save_depth=arg.save_depth,
         save_normal=arg.save_normal,
         save_albedo=arg.save_albedo,
+        save_mr=arg.save_mr,
         save_mist=arg.save_mist
     )
     if arg.object.endswith(".blend"):
@@ -837,10 +893,14 @@ def main(arg):
 
         bpy.context.scene.render.filepath = os.path.join(arg.output_folder, f'{i:03d}.png')
         for name, output in outputs.items():
-            output.file_slots[0].path = os.path.join(arg.output_folder, f'{i:03d}_{name}')
+            if hasattr(output, "file_slots") and len(output.file_slots) > 0 and hasattr(output.file_slots[0], "path"):
+                output.file_slots[0].path = os.path.join(arg.output_folder, f'{i:03d}_{name}')
+            elif hasattr(output, "directory") and hasattr(output, "file_name"):
+                output.directory = arg.output_folder
+                output.file_name = f'{i:03d}_{name}'
             
         # Render the scene
-        if not arg.geo_mode:
+        if not arg.geo_mode and arg.save_mr:
             switch_to_mr_render(False, composite_nodes)
             bpy.ops.render.render(write_still=True)
             shutil.copyfile(bpy.context.scene.render.filepath, 
@@ -851,16 +911,27 @@ def main(arg):
         bpy.context.view_layer.update()
         for name, output in outputs.items():
             ext = EXT[output.format.file_format]
-            path = glob.glob(f'{output.file_slots[0].path}*.{ext}')[0]
-            os.rename(path, f'{output.file_slots[0].path}.{ext}')
+            base = None
+            if hasattr(output, "file_slots") and len(output.file_slots) > 0 and hasattr(output.file_slots[0], "path"):
+                base = output.file_slots[0].path
+            elif hasattr(output, "directory") and hasattr(output, "file_name"):
+                base = os.path.join(output.directory, output.file_name)
+            if base is not None:
+                matches = glob.glob(f'{base}*.{ext}')
+                if len(matches) > 0:
+                    os.rename(matches[0], f'{base}.{ext}')
         
         if not arg.geo_mode:
-            ConvertNormalMap(os.path.join(arg.output_folder, f'{i:03d}_normal.exr'), 
-                             os.path.join(arg.output_folder, f'{i:03d}_normal.jpg'))
-            ConvertDepthMap(os.path.join(arg.output_folder, f'{i:03d}_depth.exr'), 
-                            os.path.join(arg.output_folder, f'{i:03d}_pos.jpg'))
-            os.remove(os.path.join(arg.output_folder, f'{i:03d}_normal.exr'))
-            os.remove(os.path.join(arg.output_folder, f'{i:03d}_depth.exr'))
+            if arg.save_normal:
+                ConvertNormalMap(os.path.join(arg.output_folder, f'{i:03d}_normal.exr'), 
+                                 os.path.join(arg.output_folder, f'{i:03d}_normal.jpg'))
+                if os.path.exists(os.path.join(arg.output_folder, f'{i:03d}_normal.exr')):
+                    os.remove(os.path.join(arg.output_folder, f'{i:03d}_normal.exr'))
+            if arg.save_depth:
+                ConvertDepthMap(os.path.join(arg.output_folder, f'{i:03d}_depth.exr'), 
+                                os.path.join(arg.output_folder, f'{i:03d}_pos.jpg'))
+                if os.path.exists(os.path.join(arg.output_folder, f'{i:03d}_depth.exr')):
+                    os.remove(os.path.join(arg.output_folder, f'{i:03d}_depth.exr'))
 
         # Save camera parameters
         metadata = {

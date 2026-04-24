@@ -3,12 +3,19 @@ import glob
 import subprocess
 import sys
 import argparse
+import platform
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TOOLS_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(TOOLS_DIR))
 
-DEFAULT_BLENDER_PATH = r"D:\Software\blender-5.1.0\blender.exe"
+if platform.system() == 'Windows':
+    DEFAULT_BLENDER_PATH = r"D:\Software\blender-5.1.0\blender.exe"
+elif platform.system() == 'Linux':
+    DEFAULT_BLENDER_PATH = "/data/kuangyong/opt/blender-5.1.0-linux-x64/blender"
+else:
+    DEFAULT_BLENDER_PATH = ""
+
 DEFAULT_INPUT_DIR = os.path.join(PROJECT_ROOT, 'datasets', '3d_model_by_forza')
 DEFAULT_OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'datasets', 'forza_preprocessed')
 

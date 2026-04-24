@@ -242,4 +242,10 @@ if __name__ == '__main__':
     np.savez(export_surface, **surface_data)
     export_sdf = f'{name}_sdf.npz'
     np.savez(export_sdf, **sdf_data)
-    igl.write_obj(f'{name}_watertight.obj', mc_verts, mc_faces)
+    watertight_obj_path = f'{name}_watertight.obj'
+    if hasattr(igl, "write_obj"):
+        igl.write_obj(watertight_obj_path, mc_verts, mc_faces)
+    elif hasattr(igl, "writeOBJ"):
+        igl.writeOBJ(watertight_obj_path, mc_verts, mc_faces)
+    else:
+        raise AttributeError("Neither igl.write_obj nor igl.writeOBJ is available in this igl build.")

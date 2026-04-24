@@ -187,9 +187,14 @@ def Watertight(V, F, epsilon = 2.0/256, grid_res = 256):
     grid_points = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T
 
     # Compute SDF at grid points using igl.signed_distance with pseudo normals
-    sdf, _, _ = igl.signed_distance(
-        grid_points, V, F, sign_type=igl.SIGNED_DISTANCE_TYPE_PSEUDONORMAL
-    )
+    try:
+        sdf, _, _, _ = igl.signed_distance(
+            grid_points, V, F, sign_type=igl.SIGNED_DISTANCE_TYPE_PSEUDONORMAL
+        )
+    except ValueError:
+        sdf, _, _ = igl.signed_distance(
+            grid_points, V, F, sign_type=igl.SIGNED_DISTANCE_TYPE_PSEUDONORMAL
+        )
  
     # igl.marching_cubes returns (vertices, faces)
     mc_verts, mc_faces = igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)

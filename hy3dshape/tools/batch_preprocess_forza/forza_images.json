@@ -1,0 +1,9 @@
+{
+    "file_folder": "../datasets/forza_preprocessed",
+    "file_list": [
+        "../datasets/forza_preprocessed/BMW_M4_21/render_cond/012.png",
+        "../datasets/forza_preprocessed/BMW_M4_21/render_cond/023.png",
+        "../datasets/forza_preprocessed/MCL_720S_18/render_cond/012.png",
+        "../datasets/forza_preprocessed/MCL_720S_18/render_cond/023.png"
+    ]
+}

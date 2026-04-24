@@ -127,4 +127,4 @@ callbacks:
         target: hy3dshape.utils.trainings.mesh_log_callback.ImageConditionalFixASLDiffuserLogger
         params:
           step_frequency: 500 # 5000
-          test_data_path: "tools/mini_testset/images.json"
+          test_data_path: "tools/batch_preprocess_forza/forza_images.json"

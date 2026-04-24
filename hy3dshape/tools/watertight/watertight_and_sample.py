@@ -197,7 +197,10 @@ def Watertight(V, F, epsilon = 2.0/256, grid_res = 256):
         )
  
     # igl.marching_cubes returns (vertices, faces)
-    mc_verts, mc_faces = igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)
+    try:
+        mc_verts, mc_faces, _, _ = igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)
+    except ValueError:
+        mc_verts, mc_faces = igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)
 
     # mc_verts: (k x 3) array of vertices of the epsilon contour
     # mc_faces: (l x 3) array of faces of the epsilon contour

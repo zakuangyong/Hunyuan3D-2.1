@@ -22,8 +22,8 @@ dataset:
     val_num_workers: 4
 
     # Data 
-    train_data_list: tools/mini_trainset/preprocessed
-    val_data_list: tools/mini_trainset/preprocessed
+    train_data_list: /data/kuangyong/proj/Hunyuan3D-2.1/datasets/forza_preprocessed
+    val_data_list: /data/kuangyong/proj/Hunyuan3D-2.1/datasets/forza_preprocessed
 
     #! Image loading
     cond_stage_key: "image"

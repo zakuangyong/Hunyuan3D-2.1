@@ -19,6 +19,22 @@ import os
 from scipy.stats import truncnorm
 import trimesh
 
+def _extract_signed_distance(result):
+    """Compatibility helper for libigl versions returning 3/4 values."""
+    if isinstance(result, (tuple, list)):
+        if len(result) == 0:
+            raise ValueError("igl.signed_distance returned no values")
+        return result[0]
+    return result
+
+def _extract_marching_cubes(result):
+    """Compatibility helper for libigl versions returning 2/3/4 values."""
+    if isinstance(result, (tuple, list)):
+        if len(result) < 2:
+            raise ValueError("igl.marching_cubes returned fewer than 2 values")
+        return result[0], result[1]
+    raise TypeError("Unexpected igl.marching_cubes return type")
+
 def random_sample_pointcloud(mesh, num = 30000):
     points, face_idx = mesh.sample(num, return_index=True)
     normals = mesh.face_normals[face_idx]
@@ -89,38 +105,40 @@ def sample_sdf(mesh, random_surface, sharp_surface):
 
     sign_type = igl.SIGNED_DISTANCE_TYPE_FAST_WINDING_NUMBER
     try:
-        vol_sdf, I, C = igl.signed_distance(
-            vol_points.astype(np.float32), 
-            mesh.vertices, mesh.faces, 
+        vol_sdf = _extract_signed_distance(igl.signed_distance(
+            vol_points.astype(np.float32),
+            mesh.vertices, mesh.faces,
             return_normals=False,
-            sign_type=sign_type)
-    except:
-        vol_sdf, I, C = igl.signed_distance(
-            vol_points.astype(np.float32), 
-            mesh.vertices, mesh.faces, 
-            return_normals=False)
+            sign_type=sign_type))
+    except Exception:
+        vol_sdf = _extract_signed_distance(igl.signed_distance(
+            vol_points.astype(np.float32),
+            mesh.vertices, mesh.faces,
+            return_normals=False))
+
     try:
-        random_near_sdf, I, C = igl.signed_distance(
-            random_near_points.astype(np.float32), 
-            mesh.vertices, mesh.faces, 
+        random_near_sdf = _extract_signed_distance(igl.signed_distance(
+            random_near_points.astype(np.float32),
+            mesh.vertices, mesh.faces,
             return_normals=False,
-            sign_type=sign_type)
-    except:
-        random_near_sdf, I, C = igl.signed_distance(
-            random_near_points.astype(np.float32), 
-            mesh.vertices, mesh.faces, 
-            return_normals=False)
+            sign_type=sign_type))
+    except Exception:
+        random_near_sdf = _extract_signed_distance(igl.signed_distance(
+            random_near_points.astype(np.float32),
+            mesh.vertices, mesh.faces,
+            return_normals=False))
+
     try:
-        sharp_near_sdf, I, C = igl.signed_distance(
-            sharp_near_points.astype(np.float32), 
-            mesh.vertices, mesh.faces, 
+        sharp_near_sdf = _extract_signed_distance(igl.signed_distance(
+            sharp_near_points.astype(np.float32),
+            mesh.vertices, mesh.faces,
             return_normals=False,
-            sign_type=sign_type)
-    except:
-        sharp_near_sdf, I, C = igl.signed_distance(
-            sharp_near_points.astype(np.float32), 
-            mesh.vertices, mesh.faces, 
-            return_normals=False)
+            sign_type=sign_type))
+    except Exception:
+        sharp_near_sdf = _extract_signed_distance(igl.signed_distance(
+            sharp_near_points.astype(np.float32),
+            mesh.vertices, mesh.faces,
+            return_normals=False))
         
     vol_label = -vol_sdf
     random_near_label = -random_near_sdf
@@ -187,20 +205,14 @@ def Watertight(V, F, epsilon = 2.0/256, grid_res = 256):
     grid_points = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T
 
     # Compute SDF at grid points using igl.signed_distance with pseudo normals
-    try:
-        sdf, _, _, _ = igl.signed_distance(
-            grid_points, V, F, sign_type=igl.SIGNED_DISTANCE_TYPE_PSEUDONORMAL
-        )
-    except ValueError:
-        sdf, _, _ = igl.signed_distance(
-            grid_points, V, F, sign_type=igl.SIGNED_DISTANCE_TYPE_PSEUDONORMAL
-        )
+    sdf = _extract_signed_distance(igl.signed_distance(
+        grid_points, V, F, sign_type=igl.SIGNED_DISTANCE_TYPE_PSEUDONORMAL
+    ))
  
     # igl.marching_cubes returns (vertices, faces)
-    try:
-        mc_verts, mc_faces, _, _ = igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)
-    except ValueError:
-        mc_verts, mc_faces = igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)
+    mc_verts, mc_faces = _extract_marching_cubes(
+        igl.marching_cubes(epsilon - np.abs(sdf), grid_points, grid_res, grid_res, grid_res, 0.0)
+    )
 
     # mc_verts: (k x 3) array of vertices of the epsilon contour
     # mc_faces: (l x 3) array of faces of the epsilon contour

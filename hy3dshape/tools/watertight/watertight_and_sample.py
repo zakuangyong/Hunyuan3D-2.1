@@ -35,6 +35,12 @@ def _extract_marching_cubes(result):
         return result[0], result[1]
     raise TypeError("Unexpected igl.marching_cubes return type")
 
+def _to_igl_arrays(vertices, faces):
+    """Convert arrays to dtypes required by pyigl bindings."""
+    v = np.asarray(vertices, dtype=np.float64)
+    f = np.asarray(faces, dtype=np.int64)
+    return v, f
+
 def random_sample_pointcloud(mesh, num = 30000):
     points, face_idx = mesh.sample(num, return_index=True)
     normals = mesh.face_normals[face_idx]
@@ -76,6 +82,7 @@ def sharp_sample_pointcloud(mesh, num=16384):
     return samples, normals
 
 def sample_sdf(mesh, random_surface, sharp_surface):
+    verts, faces = _to_igl_arrays(mesh.vertices, mesh.faces)
     n_volume_points = sharp_surface.shape[0] * 2
     vol_points = (np.random.rand(n_volume_points, 3) - 0.5) * 2 * 1.05
 
@@ -106,39 +113,33 @@ def sample_sdf(mesh, random_surface, sharp_surface):
     sign_type = igl.SIGNED_DISTANCE_TYPE_FAST_WINDING_NUMBER
     try:
         vol_sdf = _extract_signed_distance(igl.signed_distance(
-            vol_points.astype(np.float32),
-            mesh.vertices, mesh.faces,
-            return_normals=False,
+            vol_points.astype(np.float64),
+            verts, faces,
             sign_type=sign_type))
     except Exception:
         vol_sdf = _extract_signed_distance(igl.signed_distance(
-            vol_points.astype(np.float32),
-            mesh.vertices, mesh.faces,
-            return_normals=False))
+            vol_points.astype(np.float64),
+            verts, faces))
 
     try:
         random_near_sdf = _extract_signed_distance(igl.signed_distance(
-            random_near_points.astype(np.float32),
-            mesh.vertices, mesh.faces,
-            return_normals=False,
+            random_near_points.astype(np.float64),
+            verts, faces,
             sign_type=sign_type))
     except Exception:
         random_near_sdf = _extract_signed_distance(igl.signed_distance(
-            random_near_points.astype(np.float32),
-            mesh.vertices, mesh.faces,
-            return_normals=False))
+            random_near_points.astype(np.float64),
+            verts, faces))
 
     try:
         sharp_near_sdf = _extract_signed_distance(igl.signed_distance(
-            sharp_near_points.astype(np.float32),
-            mesh.vertices, mesh.faces,
-            return_normals=False,
+            sharp_near_points.astype(np.float64),
+            verts, faces,
             sign_type=sign_type))
     except Exception:
         sharp_near_sdf = _extract_signed_distance(igl.signed_distance(
-            sharp_near_points.astype(np.float32),
-            mesh.vertices, mesh.faces,
-            return_normals=False))
+            sharp_near_points.astype(np.float64),
+            verts, faces))
         
     vol_label = -vol_sdf
     random_near_label = -random_near_sdf
@@ -190,6 +191,7 @@ def normalize_to_unit_box(V):
 # Given: V (n x 3 array of vertices), F (m x 3 array of faces)
 # Parameters epsilon/grid_res
 def Watertight(V, F, epsilon = 2.0/256, grid_res = 256):
+    V, F = _to_igl_arrays(V, F)
     # Compute bounding box
     min_corner = V.min(axis=0)
     max_corner = V.max(axis=0)
